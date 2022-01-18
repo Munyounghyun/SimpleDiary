@@ -1,25 +1,121 @@
-import logo from './logo.svg';
-import './App.css';
+import { type } from "@testing-library/user-event/dist/type";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+} from "react";
+import "./App.css";
+import DiaryEditor from "./DiaryEditor";
+import DiaryList from "./DiaryList";
 
-function App() {
+const reducer = (state, action) => {
+  switch (action.type) {
+    case "INIT": {
+      return action.data;
+    }
+
+    case "CREATE":
+      const create_date = new Date().getTime();
+      const newItem = {
+        ...action.data,
+        create_date,
+      };
+      return [newItem, ...state];
+
+    case "REMOVE":
+      return state.filter((it) => it.id !== action.targetId);
+
+    case "EDIT":
+      return state.map((it) =>
+        it.id === action.targetId ? { ...it, content: action.newContent } : it
+      );
+
+    default:
+      return state;
+  }
+};
+
+export const DiaryStateContext = React.createContext();
+//export를 해주어야 다른 자식요소들이 데이터를 쓸수있음
+//export default는 파일당 하나밖에 못씀
+
+export const DiaryDispatchContext = React.createContext();
+
+const App = () => {
+  const [data, dispatch] = useReducer(reducer, []);
+
+  const dataId = useRef(0);
+
+  const getData = async () => {
+    const res = await fetch(
+      "https://jsonplaceholder.typicode.com/comments"
+    ).then((res) => res.json());
+
+    const initData = res.slice(0, 20).map((it) => {
+      return {
+        author: it.email,
+        content: it.body,
+        emotion: Math.floor(Math.random() * 5) + 1, //0부터 4까지 난수를 생성 후 Math.floor로 소수점들을 버려줌 거기다가 +1 해줌
+        create_date: new Date().getTime(),
+        id: dataId.current++,
+      };
+    });
+    dispatch({ type: "INIT", data: initData });
+    console.log(res);
+  };
+
+  useEffect(() => {
+    getData();
+  }, []);
+
+  //저장기능
+  const onCreate = useCallback((author, content, emotion) => {
+    dispatch({
+      type: "CREATE",
+      data: { author, content, emotion, id: dataId.current },
+    });
+    dataId.current += 1;
+  }, []);
+
+  //삭제기능
+  const onRemove = useCallback((targetId) => {
+    dispatch({ type: "REMOVE", targetId });
+  }, []); //최적화 작업 완료
+
+  //수정기능
+  const onEdit = useCallback((targetId, newContent) => {
+    dispatch({ type: "EDIT", targetId, newContent });
+  }, []); //최적화 작업 완료
+
+  const memoizedDispatches = useMemo(() => {
+    return { onCreate, onRemove, onEdit };
+  }, []); //useMemo로 만들어서 전달하는 이유는 앱컴포넌트가 재생성될때 다 재생성되게됨
+
+  const getDiaryAnalysis = useMemo(() => {
+    const goodCount = data.filter((it) => it.emotion >= 3).length;
+    const badCount = data.length - goodCount;
+    const goodRatio = (goodCount / data.length) * 100;
+    return { goodCount, badCount, goodRatio };
+  }, [data.length]); //배열의 값이 바뀌지 않으면 콜백함수 다시 실행하지 않음
+
+  const { goodCount, badCount, goodRatio } = getDiaryAnalysis; //getDiaryAnamlysis는 더이상 함수가 아님 , 값으로 사용하여야함
+
   return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
-    </div>
+    <DiaryStateContext.Provider value={data}>
+      <DiaryDispatchContext.Provider value={memoizedDispatches}>
+        <div className="App">
+          <DiaryEditor />
+          <div>전체 일기 : {data.length}</div>
+          <div>기분 좋은 일기 개수 : {goodCount}</div>
+          <div>기분 나쁜 일기 개수 : {badCount}</div>
+          <div>기분 좋은 일기 비율 : {goodRatio}</div>
+          <DiaryList />
+        </div>
+      </DiaryDispatchContext.Provider>
+    </DiaryStateContext.Provider>
   );
-}
+};
 
 export default App;
